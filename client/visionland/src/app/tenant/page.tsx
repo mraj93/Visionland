@@ -13,19 +13,30 @@ import { useSimStore, type Property } from "@/lib/sim-store"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import TenantAlerts from "@/components/tenant-alerts"
+import ConnectButton, { useEthersFromAppKit } from "@/app/appkit-setup";
+import { useAppKit , useDisconnect } from "@reown/appkit/react";
+
 
 function WalletConnectInline() {
-  const { wallet, connectWallet, disconnectWallet } = useSimStore()
+  const { address, isConnected } = useEthersFromAppKit(); // Get wallet info from AppKit
+
+  const { open } = useAppKit(); // Open wallet modal
+  const { disconnect} = useDisconnect();
+    const handleDisconnect = async() => {
+        //  disconnect()
+        window.location.reload(); // simplest way to reset wallet state
+
+      };
   return (
     <div className="flex items-center gap-2">
-      {wallet?.address ? (
+      {isConnected && address ? (
         <>
           <Badge variant="secondary" className="font-mono bg-slate-800 text-slate-200 border border-white/10">
-            {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)}
+            {address.slice(0, 6)}…{address.slice(-4)}
           </Badge>
           <Button
             variant="secondary"
-            onClick={disconnectWallet}
+            onClick={handleDisconnect}
             className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
           >
             Disconnect
@@ -33,7 +44,7 @@ function WalletConnectInline() {
         </>
       ) : (
         <Button
-          onClick={connectWallet}
+          onClick={open}
           className="animate-in fade-in slide-in-from-right-2 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-900"
         >
           Connect Wallet
@@ -42,6 +53,38 @@ function WalletConnectInline() {
     </div>
   )
 }
+
+
+
+
+// function WalletConnectInline() {
+//   const { wallet, connectWallet, disconnectWallet } = useSimStore()
+//   return (
+//     <div className="flex items-center gap-2">
+//       {wallet?.address ? (
+//         <>
+//           <Badge variant="secondary" className="font-mono bg-slate-800 text-slate-200 border border-white/10">
+//             {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)}
+//           </Badge>
+//           <Button
+//             variant="secondary"
+//             onClick={disconnectWallet}
+//             className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
+//           >
+//             Disconnect
+//           </Button>
+//         </>
+//       ) : (
+//         <Button
+//           onClick={connectWallet}
+//           className="animate-in fade-in slide-in-from-right-2 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-900"
+//         >
+//           Connect Wallet
+//         </Button>
+//       )}
+//     </div>
+//   )
+// }
 
 export default function TenantPage() {
   const { toast } = useToast()
