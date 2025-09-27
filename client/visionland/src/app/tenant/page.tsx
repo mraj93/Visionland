@@ -14,19 +14,22 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import TenantAlerts from "@/components/tenant-alerts"
 import ConnectButton, { useEthersFromAppKit } from "@/app/appkit-setup";
-import { useAppKit , useDisconnect } from "@reown/appkit/react";
+// import { useAppKit , useDisconnect } from "@reown/appkit/react";
+import { useAppKit ,useDisconnect } from "@reown/appkit/react";
+import { useAppKitProvider, useAppKitAccount } from "@reown/appkit/react";
+
 
 
 function WalletConnectInline() {
-  const { address, isConnected } = useEthersFromAppKit(); // Get wallet info from AppKit
+  const { address, isConnected } = useAppKitAccount(); // Get wallet info from AppKit
 
   const { open } = useAppKit(); // Open wallet modal
   const { disconnect} = useDisconnect();
-    const handleDisconnect = async() => {
-        //  disconnect()
-        window.location.reload(); // simplest way to reset wallet state
+  const handleDisconnect = async() => {
+       disconnect()
+      // window.location.reload(); // simplest way to reset wallet state
 
-      };
+    };
   return (
     <div className="flex items-center gap-2">
       {isConnected && address ? (
@@ -40,6 +43,11 @@ function WalletConnectInline() {
             className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
           >
             Disconnect
+          </Button>
+          <Button                  variant="secondary"
+        className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
+ onClick={() => open({ view: "Networks" })}>
+            Network 
           </Button>
         </>
       ) : (

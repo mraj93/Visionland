@@ -10,7 +10,7 @@ import {
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 import { mainnet, arbitrum, sepolia, AppKitNetwork, ChainNamespace } from "@reown/appkit/networks";
 import { useEffect, useState } from "react";
-import { BrowserProvider } from "ethers";
+// import { BrowserProvider } from "ethers";
 import { useCallback } from "react";
 import { createWalletClient, custom } from "viem";
 import { Button } from "@/components/ui/button";
@@ -20,14 +20,14 @@ const projectId = "dad02044f8131fadb9ebd0a2d7c646a3";
 const metadata = {
   name: "My Website",
   description: "My Website description",
-  url: "https://mywebsite.com",
-  icons: ["https://avatars.mywebsite.com/"],
+  url: "http://localhost:3000/",
+  icons: ["http://localhost:3000/"],
 };
 
 createAppKit({
   adapters: [new EthersAdapter()],
   metadata,
-  networks: [ mainnet, arbitrum, sepolia] as [AppKitNetwork, ...AppKitNetwork[]],
+  networks: [ sepolia] as [AppKitNetwork, ...AppKitNetwork[]],
   projectId,
   features: {
     analytics: true,
@@ -44,11 +44,12 @@ export function useEthersFromAppKit() {
     return new BrowserProvider(walletProvider as any, Number(chainId));
   }
 
-  function getSigner(): ReturnType<BrowserProvider['getSigner']> | null {
+  function getSigner() {
     const provider = getProvider();
     if (!provider || !address) return null;
-    return provider.getSigner(address); // ✅ correct way
-  }
+
+    return provider.getSigner(address); // ✅ correct
+    }
 
   const getUserBalance = useCallback(async () => {
     try {

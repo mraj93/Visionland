@@ -12,6 +12,50 @@ import Link from "next/link"
 import { useSimStore, type Property } from "@/lib/sim-store"
 import { cn } from "@/lib/utils"
 import OwnerOnboarding from "@/components/owner-onboarding"
+import { useAppKit ,useDisconnect } from "@reown/appkit/react";
+import {  useAppKitAccount } from "@reown/appkit/react";
+
+function WalletConnectInline() {
+  const { address, isConnected } = useAppKitAccount(); // Get wallet info from AppKit
+
+  const { open } = useAppKit(); // Open wallet modal
+  const { disconnect} = useDisconnect();
+  const handleDisconnect = async() => {
+       disconnect()
+      // window.location.reload(); // simplest way to reset wallet state
+
+    };
+  return (
+    <div className="flex items-center gap-2">
+      {isConnected && address ? (
+        <>
+          <Badge variant="secondary" className="font-mono bg-slate-800 text-slate-200 border border-white/10">
+            {address.slice(0, 6)}…{address.slice(-4)}
+          </Badge>
+          <Button
+            variant="secondary"
+            onClick={handleDisconnect}
+            className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
+          >
+            Disconnect
+          </Button>
+          <Button                  variant="secondary"
+        className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
+ onClick={() => open({ view: "Networks" })}>
+            Network 
+          </Button>
+        </>
+      ) : (
+        <Button
+          onClick={open}
+          className="animate-in fade-in slide-in-from-right-2 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-900"
+        >
+          Connect Wallet
+        </Button>
+      )}
+    </div>
+  )
+}
 
 export default function OwnerPage() {
   const { properties, addProperty, togglePropertyActive, receipts, ensureSeeded } = useSimStore()
@@ -76,6 +120,8 @@ export default function OwnerPage() {
             </span>
           </h1>
           <nav className="flex items-center gap-3">
+            <WalletConnectInline />
+
             <Link href="/" className="text-sm underline underline-offset-4 text-cyan-300 hover:text-cyan-200">
               Home
             </Link>

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
+import { AppKit } from "../context/appkit";
+
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,6 +10,7 @@ export const metadata: Metadata = {
   description: 'Visionland',
   generator: 'Visionland',
 }
+
 
 export default function RootLayout({
   children,
@@ -17,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-        {children}
+        <AppKit>{children}</AppKit>
       </body>
     </html>
   )
