@@ -13,11 +13,12 @@ import { useSimStore, type Property } from "@/lib/sim-store"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import TenantAlerts from "@/components/tenant-alerts"
-import ConnectButton, { useEthersFromAppKit } from "@/app/appkit-setup";
+// import ConnectButton, { useEthersFromAppKit } from "@/app/appkit-setup";
 // import { useAppKit , useDisconnect } from "@reown/appkit/react";
 import { useAppKit ,useDisconnect } from "@reown/appkit/react";
 import { useAppKitProvider, useAppKitAccount } from "@reown/appkit/react";
 
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 
 function WalletConnectInline() {
@@ -150,7 +151,7 @@ export default function TenantPage() {
             </h1>
           </Link>
           <nav className="flex items-center gap-3">
-            <WalletConnectInline />
+            <ConnectButton />
             <Link href="/" className="text-sm underline underline-offset-4 text-cyan-300 hover:text-cyan-200">
               Home
             </Link>

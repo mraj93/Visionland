@@ -118,12 +118,12 @@ export default function Home() {
       <header className="w-full border-b border-white/10 bg-slate-900/60 backdrop-blur-md relative z-10">
         <div className="mx-auto max-w-5xl px-4 py-4 flex items-center justify-between">
           <Link href="/">
-            <h1 className="text-lg font-semibold cursor-pointer">
-              <span className="bg-gradient-to-r from-fuchsia-400 via-violet-300 to-cyan-300 bg-clip-text text-transparent">
-                VisionLand
-              </span>
-            </h1>
-          </Link>
+          <h1 className="text-lg font-semibold cursor-pointer">
+            <span className="bg-gradient-to-r from-fuchsia-400 via-violet-300 to-cyan-300 bg-clip-text text-transparent">
+              VisionLand
+            </span>
+          </h1>
+        </Link>
           <nav className="flex items-center gap-2">
             <Link
               href="/tenant"

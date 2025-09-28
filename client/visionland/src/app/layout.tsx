@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 }
 
 
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -20,6 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
+        
         <AppKit>{children}</AppKit>
       </body>
     </html>
