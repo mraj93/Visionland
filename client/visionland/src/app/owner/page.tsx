@@ -16,12 +16,16 @@ import OwnerOnboarding from "@/components/owner-onboarding";
 import { useAppKit, useDisconnect, useAppKitAccount } from "@reown/appkit/react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 
-// === Inline Filecoin helpers (Synapse + ethers) ===
-import { Synapse } from "@filoz/synapse-sdk";
+// === Synapse + ethers (Filecoin) ===
+import { Synapse /*, RPC_URLS*/ } from "@filoz/synapse-sdk";
 import { ethers } from "ethers";
+
+// === Lighthouse (IPFS) ===
+import lighthouse from "@lighthouse-web3/sdk";
 
 let __synapsePromise: Promise<Synapse> | null = null;
 
+// ---------- Provider (MetaMask) ----------
 async function getBrowserProvider(): Promise<ethers.BrowserProvider> {
   if (typeof window === "undefined" || !window.ethereum) {
     throw new Error("No injected wallet found. Open in a browser with MetaMask (or similar).");
@@ -31,36 +35,56 @@ async function getBrowserProvider(): Promise<ethers.BrowserProvider> {
   return provider;
 }
 
+// ---------- Synapse factory (kept minimal; you can add chain/balance checks as before) ----------
 async function getSynapse(): Promise<Synapse> {
   if (!__synapsePromise) {
     __synapsePromise = (async () => {
       const provider = await getBrowserProvider();
+      // OPTIONAL: add chain guard + fee overrides here if FEVM estimate fails in your setup.
       return await Synapse.create({ provider });
     })();
   }
   return __synapsePromise;
 }
 
-async function uploadJSON(obj: unknown): Promise<{ pieceCid: string }> {
+// ---------- Filecoin helpers (Synapse) ----------
+async function fcUploadJSON(obj: unknown): Promise<{ pieceCid: string }> {
   const synapse = await getSynapse();
-  
-  const data = new TextEncoder().encode("dsfd");
-  console.log(data);
-  
+  const data = new TextEncoder().encode(JSON.stringify(obj));
   const result = await synapse.storage.upload(data);
-  console.log(result);
-  
   return { pieceCid: result.pieceCid };
 }
 
-async function downloadJSON<T = unknown>(pieceCid: string): Promise<T> {
+async function fcDownloadJSON<T = unknown>(pieceCid: string): Promise<T> {
   const synapse = await getSynapse();
   const bytes = await synapse.storage.download(pieceCid);
   const text = new TextDecoder().decode(bytes);
   return JSON.parse(text) as T;
 }
-// === /Inline Filecoin helpers ===
 
+// ---------- Lighthouse helpers (IPFS) ----------
+// const LIGHTHOUSE_API_KEY = process.env.NEXT_PUBLIC_LIGHTHOUSE_API_KEY; // demo only (frontend)
+const LIGHTHOUSE_API_KEY ="0ebd66d1.14229f36a37440abaaec39aec071c361";
+
+async function lhUploadJSON(obj: unknown, name = "visionland-record"): Promise<{ cid: string; name?: string }> {
+  if (!LIGHTHOUSE_API_KEY) {
+    throw new Error("Missing NEXT_PUBLIC_LIGHTHOUSE_API_KEY");
+  }
+  const text = JSON.stringify(obj);
+  const res = await lighthouse.uploadText(text, LIGHTHOUSE_API_KEY, name);
+  // res.data = { Name, Hash (CID), Size }
+  return { cid: res?.data?.Hash, name: res?.data?.Name };
+}
+
+async function lhDownloadJSON<T = unknown>(cid: string): Promise<T> {
+  const url = `https://gateway.lighthouse.storage/ipfs/${cid}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Gateway fetch failed: ${r.status}`);
+  const text = await r.text();
+  return JSON.parse(text) as T;
+}
+
+// ---------- Wallet Connect mini ----------
 function WalletConnectInline() {
   const { address, isConnected } = useAppKitAccount();
   const { open } = useAppKit();
@@ -110,8 +134,9 @@ export default function OwnerPage() {
     updateProperty,
   } = useSimStore();
 
-  // Fallback CID display if your store doesn’t have pieceCid / updateProperty
-  const [cidMap, setCidMap] = useState<Record<string, string>>({});
+  // Local maps if your store lacks fields
+  const [pieceCidMap, setPieceCidMap] = useState<Record<string, string>>({}); // Filecoin pieceCID
+  const [ipfsCidMap, setIpfsCidMap] = useState<Record<string, string>>({}); // Lighthouse IPFS CID
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -122,16 +147,18 @@ export default function OwnerPage() {
     image: "",
   });
 
-  // Restore flow
-  const [restoreOpen, setRestoreOpen] = useState(false);
-  const [restoreCid, setRestoreCid] = useState("");
+  // Restore flows
+  const [restoreOpenFC, setRestoreOpenFC] = useState(false); // Filecoin restore
+  const [restorePieceCid, setRestorePieceCid] = useState("");
 
-  // JSON viewer modal
+  const [restoreOpenLH, setRestoreOpenLH] = useState(false); // Lighthouse restore
+  const [restoreIpfsCid, setRestoreIpfsCid] = useState("");
+
+  // JSON viewer
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonTitle, setJsonTitle] = useState("");
   const [jsonContent, setJsonContent] = useState<string>("");
 
-  // Track length for detecting last-added property when addProperty doesn't return id
   const prevLenRef = useRef(0);
 
   useEffect(() => {
@@ -163,20 +190,14 @@ export default function OwnerPage() {
       description: form.description.trim(),
       image: form.image.trim() || "/house-front-elevation.jpg",
     };
-
-    // Some stores return id; some don't. Try to capture it.
-    const ret = (addProperty as any)(payload);
-    // If you return id in your store, ret will be the id. If not, we can still proceed.
-    if (ret && typeof ret === "string") {
-      // returned id available later (e.g., for restore)
-    }
-
+    (addProperty as any)(payload);
     setOpen(false);
     setForm({ title: "", location: "", pricePerMonth: "", description: "", image: "" });
   }
 
-  // === Filecoin actions ===
+  // ===== Backup / View actions =====
 
+  // Filecoin (Synapse)
   async function backupPropertyToFilecoin(prop: Property) {
     try {
       const toSave = {
@@ -189,40 +210,85 @@ export default function OwnerPage() {
         active: prop.active,
         createdAt: prop.createdAt,
       };
-      const { pieceCid } = await uploadJSON(toSave);
+      const { pieceCid } = await fcUploadJSON(toSave);
 
-      // Persist in store if possible
       if (typeof updateProperty === "function") {
         updateProperty(prop.id, { pieceCid });
       } else {
-        setCidMap((m) => ({ ...m, [prop.id]: pieceCid }));
+        setPieceCidMap((m) => ({ ...m, [prop.id]: pieceCid }));
       }
 
-      setJsonTitle(`Uploaded — CID: ${pieceCid}`);
+      setJsonTitle(`Uploaded to Filecoin — pieceCID: ${pieceCid}`);
       setJsonContent(JSON.stringify(toSave, null, 2));
       setJsonOpen(true);
     } catch (err: any) {
-      alert(`Backup failed: ${err?.message ?? String(err)}`);
+      alert(`Filecoin backup failed: ${err?.message ?? String(err)}`);
       console.error(err);
     }
   }
 
-  async function viewFromCid(pieceCid: string, title: string) {
+  async function viewFromPieceCid(pieceCid: string, title: string) {
     try {
-      const obj = await downloadJSON<any>(pieceCid);
-      setJsonTitle(`${title} — from CID ${pieceCid}`);
+      const obj = await fcDownloadJSON<any>(pieceCid);
+      setJsonTitle(`${title} — from Filecoin pieceCID ${pieceCid}`);
       setJsonContent(JSON.stringify(obj, null, 2));
       setJsonOpen(true);
     } catch (err: any) {
-      alert(`Download failed: ${err?.message ?? String(err)}`);
+      alert(`Filecoin download failed: ${err?.message ?? String(err)}`);
       console.error(err);
     }
   }
 
-  async function restoreFromCidToNewProperty() {
-    if (!restoreCid.trim()) return;
+  // Lighthouse (IPFS)
+  async function backupPropertyToLighthouse(prop: Property) {
     try {
-      const data = await downloadJSON<Partial<Property>>(restoreCid.trim());
+      const toSave = {
+        id: prop.id,
+        title: prop.title,
+        location: prop.location,
+        pricePerMonth: prop.pricePerMonth,
+        description: prop.description,
+        image: prop.image,
+        active: prop.active,
+        createdAt: prop.createdAt,
+      };
+      const { cid, name } = await lhUploadJSON(toSave, `visionland-${prop.id}`);
+
+      if (typeof updateProperty === "function") {
+        // If you have an 'ipfsCid' field in your store, use that. Otherwise local map.
+        updateProperty(prop.id, { ipfsCid: cid });
+      } else {
+        setIpfsCidMap((m) => ({ ...m, [prop.id]: cid }));
+      }
+
+      setJsonTitle(`Uploaded to Lighthouse — CID: ${cid} ${name ? `(${name})` : ""}`);
+      setJsonContent(JSON.stringify(toSave, null, 2));
+      setJsonOpen(true);
+    } catch (err: any) {
+      alert(`Lighthouse backup failed: ${err?.message ?? String(err)}`);
+      console.error(err);
+    }
+  }
+
+  async function viewFromIpfsCid(cid: string, title: string) {
+    try {
+      const obj = await lhDownloadJSON<any>(cid);
+      setJsonTitle(`${title} — from IPFS CID ${cid}`);
+      setJsonContent(JSON.stringify(obj, null, 2));
+      setJsonOpen(true);
+    } catch (err: any) {
+      alert(`IPFS download failed: ${err?.message ?? String(err)}`);
+      console.error(err);
+    }
+  }
+
+  // ===== Restore flows =====
+
+  // Restore from Filecoin pieceCID
+  async function restoreFromPieceCidToNewProperty() {
+    if (!restorePieceCid.trim()) return;
+    try {
+      const data = await fcDownloadJSON<Partial<Property>>(restorePieceCid.trim());
       const newPayload: Omit<Property, "id" | "createdAt" | "active"> = {
         title: (data.title ?? "Restored Property") as string,
         location: (data.location ?? "Unknown") as string,
@@ -230,33 +296,48 @@ export default function OwnerPage() {
         description: (data.description ?? "") as string,
         image: (data.image ?? "/house-front-elevation.jpg") as string,
       };
-
       const maybeId = (addProperty as any)(newPayload);
-      if (maybeId && typeof maybeId === "string") {
-        // If your store returns id, attach CID to the newly created record.
+      const attachId = (typeof maybeId === "string" ? maybeId : undefined) ?? properties[0]?.id;
+      if (attachId) {
         if (typeof updateProperty === "function") {
-          updateProperty(maybeId, { pieceCid: restoreCid.trim() });
+          updateProperty(attachId, { pieceCid: restorePieceCid.trim() });
         } else {
-          setCidMap((m) => ({ ...m, [maybeId]: restoreCid.trim() }));
+          setPieceCidMap((m) => ({ ...m, [attachId]: restorePieceCid.trim() }));
         }
-      } else {
-        // Fallback: try to guess the last-added property by comparing lengths.
-        // (Works if store prepends new items)
-        setTimeout(() => {
-          const last = properties[0];
-          if (last) {
-            if (typeof updateProperty === "function") {
-              updateProperty(last.id, { pieceCid: restoreCid.trim() });
-            } else {
-              setCidMap((m) => ({ ...m, [last.id]: restoreCid.trim() }));
-            }
-          }
-        }, 0);
       }
+      setRestoreOpenFC(false);
+      setRestorePieceCid("");
+      alert("Property created from Filecoin pieceCID.");
+    } catch (err: any) {
+      alert(`Restore failed: ${err?.message ?? String(err)}`);
+      console.error(err);
+    }
+  }
 
-      setRestoreOpen(false);
-      setRestoreCid("");
-      alert("Property created from CID.");
+  // Restore from Lighthouse IPFS CID
+  async function restoreFromIpfsCidToNewProperty() {
+    if (!restoreIpfsCid.trim()) return;
+    try {
+      const data = await lhDownloadJSON<Partial<Property>>(restoreIpfsCid.trim());
+      const newPayload: Omit<Property, "id" | "createdAt" | "active"> = {
+        title: (data.title ?? "Restored Property") as string,
+        location: (data.location ?? "Unknown") as string,
+        pricePerMonth: Number(data.pricePerMonth ?? 0),
+        description: (data.description ?? "") as string,
+        image: (data.image ?? "/house-front-elevation.jpg") as string,
+      };
+      const maybeId = (addProperty as any)(newPayload);
+      const attachId = (typeof maybeId === "string" ? maybeId : undefined) ?? properties[0]?.id;
+      if (attachId) {
+        if (typeof updateProperty === "function") {
+          updateProperty(attachId, { ipfsCid: restoreIpfsCid.trim() });
+        } else {
+          setIpfsCidMap((m) => ({ ...m, [attachId]: restoreIpfsCid.trim() }));
+        }
+      }
+      setRestoreOpenLH(false);
+      setRestoreIpfsCid("");
+      alert("Property created from IPFS CID.");
     } catch (err: any) {
       alert(`Restore failed: ${err?.message ?? String(err)}`);
       console.error(err);
@@ -289,43 +370,89 @@ export default function OwnerPage() {
               Tenant
             </Link>
 
-            {/* Restore from CID */}
-            <Dialog open={restoreOpen} onOpenChange={setRestoreOpen}>
+            {/* Restore from Filecoin pieceCID */}
+            <Dialog open={restoreOpenFC} onOpenChange={setRestoreOpenFC}>
               <DialogTrigger asChild>
                 <Button
                   variant="secondary"
                   className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
                 >
-                  Restore from CID
+                  Restore (Filecoin pieceCID)
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-lg border border-white/10 bg-slate-900/80 backdrop-blur-2xl text-slate-200">
                 <DialogHeader>
                   <DialogTitle className="bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
-                    Restore Property from Filecoin CID
+                    Restore from Filecoin pieceCID
                   </DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="cid" className="text-slate-300">PieceCID</Label>
+                    <Label htmlFor="piececid" className="text-slate-300">pieceCID</Label>
                     <Input
-                      id="cid"
+                      id="piececid"
                       placeholder="baga6ea4seaq..."
                       className="bg-slate-800/70 border-white/10 text-slate-100 placeholder:text-slate-500"
-                      value={restoreCid}
-                      onChange={(e) => setRestoreCid(e.target.value)}
+                      value={restorePieceCid}
+                      onChange={(e) => setRestorePieceCid(e.target.value)}
                     />
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="secondary"
                       className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
-                      onClick={() => setRestoreOpen(false)}
+                      onClick={() => setRestoreOpenFC(false)}
                     >
                       Cancel
                     </Button>
                     <Button
-                      onClick={restoreFromCidToNewProperty}
+                      onClick={restoreFromPieceCidToNewProperty}
+                      className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-900"
+                    >
+                      Restore
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Restore from Lighthouse IPFS CID */}
+            <Dialog open={restoreOpenLH} onOpenChange={setRestoreOpenLH}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="secondary"
+                  className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
+                >
+                  Restore (IPFS CID)
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg border border-white/10 bg-slate-900/80 backdrop-blur-2xl text-slate-200">
+                <DialogHeader>
+                  <DialogTitle className="bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
+                    Restore from IPFS CID (Lighthouse)
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="ipfscid" className="text-slate-300">IPFS CID</Label>
+                    <Input
+                      id="ipfscid"
+                      placeholder="Qm... or bafy..."
+                      className="bg-slate-800/70 border-white/10 text-slate-100 placeholder:text-slate-500"
+                      value={restoreIpfsCid}
+                      onChange={(e) => setRestoreIpfsCid(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-white/10"
+                      onClick={() => setRestoreOpenLH(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={restoreFromIpfsCidToNewProperty}
                       className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-900"
                     >
                       Restore
@@ -473,7 +600,8 @@ export default function OwnerPage() {
         {/* Property List */}
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {properties.map((p) => {
-            const cid = (p as any).pieceCid || cidMap[p.id];
+            const pieceCid = (p as any).pieceCid || pieceCidMap[p.id]; // Filecoin
+            const ipfsCid = (p as any).ipfsCid || ipfsCidMap[p.id]; // Lighthouse
             return (
               <Card
                 key={p.id}
@@ -505,16 +633,31 @@ export default function OwnerPage() {
                       >
                         {p.active ? "Active" : "Paused"}
                       </Badge>
-                      {cid ? (
+
+                      {/* Filecoin View */}
+                      {pieceCid ? (
                         <button
-                          onClick={() => viewFromCid(cid, p.title)}
+                          onClick={() => viewFromPieceCid(pieceCid, p.title)}
                           className="text-xs underline underline-offset-4 text-cyan-300 hover:text-cyan-200"
-                          title={cid}
+                          title={pieceCid}
                         >
-                          View JSON
+                          View JSON (Filecoin)
                         </button>
                       ) : (
-                        <span className="text-xs text-slate-400">Not backed up</span>
+                        <span className="text-xs text-slate-400">Not on Filecoin</span>
+                      )}
+
+                      {/* Lighthouse View */}
+                      {ipfsCid ? (
+                        <button
+                          onClick={() => viewFromIpfsCid(ipfsCid, p.title)}
+                          className="text-xs underline underline-offset-4 text-fuchsia-300 hover:text-fuchsia-200"
+                          title={ipfsCid}
+                        >
+                          View JSON (IPFS)
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">Not on IPFS</span>
                       )}
                     </div>
                   </div>
@@ -524,9 +667,14 @@ export default function OwnerPage() {
                   <div className="min-w-0">
                     <p className="font-semibold text-cyan-300">{p.pricePerMonth} PYUSD</p>
                     <p className="text-sm text-slate-400">per month</p>
-                    {cid && (
+                    {pieceCid && (
                       <p className="mt-1 text-[11px] text-slate-400 break-all">
-                        CID: {cid}
+                        Filecoin pieceCID: {pieceCid}
+                      </p>
+                    )}
+                    {ipfsCid && (
+                      <p className="mt-1 text-[11px] text-slate-400 break-all">
+                        IPFS CID: {ipfsCid}
                       </p>
                     )}
                   </div>
@@ -551,11 +699,18 @@ export default function OwnerPage() {
                       {p.active ? "Pause" : "Activate"}
                     </Button>
 
+                    {/* Backup buttons */}
                     <Button
                       onClick={() => backupPropertyToFilecoin(p)}
                       className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-900"
                     >
                       Backup to Filecoin
+                    </Button>
+                    <Button
+                      onClick={() => backupPropertyToLighthouse(p)}
+                      className="bg-gradient-to-r from-fuchsia-500 to-rose-500 hover:from-fuchsia-400 hover:to-rose-400 text-white"
+                    >
+                      Backup to Lighthouse (IPFS)
                     </Button>
                   </div>
                 </CardContent>
